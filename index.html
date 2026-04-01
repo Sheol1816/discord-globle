@@ -128,10 +128,12 @@
     <script type="module">
         const statusText = document.getElementById('discord-status');
         const loadingScreen = document.getElementById('loading');
+        const cb = Date.now(); // Cache buster
 
         async function setupDiscord() {
             let DiscordSDK;
             try {
+                // Keep using /esm specifically for the Discord SDK since it works
                 const module = await import("/esm/@discord/embedded-app-sdk");
                 DiscordSDK = module.DiscordSDK;
             } catch (e) {
@@ -337,29 +339,38 @@
             await setupDiscord(); 
             
             try {
-                loadingScreen.innerText = "Loading D3 Engine (Bundled)...";
+                loadingScreen.innerText = "Loading D3 Engine (jsDelivr)...";
                 
                 try {
-                    const d3Module = await import("/esm/d3@7.9.0?bundle");
-                    window.d3 = d3Module.default || d3Module;
+                    // Hijack the new /map proxy to fetch pre-compiled D3 directly from NPM registry via jsdelivr
+                    const res = await fetch("/map/npm/d3@7.9.0/dist/d3.min.js?v=" + cb);
+                    if (!res.ok) throw new Error(`Proxy D3 HTTP ${res.status}`);
+                    
+                    const code = await res.text();
+                    
+                    // Inject raw script, dodging CSP entirely
+                    const script = document.createElement("script");
+                    script.textContent = code;
+                    document.head.appendChild(script);
+                    
                 } catch (e1) {
-                    throw new Error("D3 Engine failed to load via /esm mapping.");
+                    throw new Error("D3 Engine failed to load via /map mapping: " + e1.message);
                 }
 
                 if (!window.d3 || !window.d3.geoOrthographic) {
-                    throw new Error("D3 loaded but is missing map functions.");
+                    throw new Error("D3 loaded but is missing map functions. Check your /map proxy.");
                 }
 
                 loadingScreen.innerText = "Loading Map Data...";
                 
                 let data;
                 try {
-                    // Fetch the map data through the completely new /map proxy
-                    const res = await fetch("/map/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson");
+                    // Fetch the map data through the exact same /map proxy targeting github raw content
+                    const res = await fetch("/map/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson?v=" + cb);
                     if (!res.ok) throw new Error(`Proxy Map HTTP ${res.status}`);
                     data = await res.json();
                 } catch (e2) {
-                    throw new Error("Map fetch failed. Did you add the /map URL Mapping pointing to cdn.jsdelivr.net/?");
+                    throw new Error("Map fetch failed: " + e2.message);
                 }
 
                 initGame(data);
