@@ -130,20 +130,6 @@
         const loadingScreen = document.getElementById('loading');
         const cb = Date.now(); // Cache buster to circumvent Discord's aggressive proxy caching
 
-        // --- SCRIPT TAG INJECTION ---
-        // fetch() requires CORS headers which d3js.org doesn't always send.
-        // A standard <script> tag bypasses CORS completely, and routing it through the proxy
-        // bypasses Discord's strict CSP because it appears as a same-origin request.
-        async function loadScriptViaTag(url) {
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = url;
-                script.onload = resolve;
-                script.onerror = () => reject(new Error(`Script tag failed for ${url}`));
-                document.head.appendChild(script);
-            });
-        }
-
         async function setupDiscord() {
             let DiscordSDK;
             try {
@@ -379,18 +365,19 @@
             try {
                 loadingScreen.innerText = "Loading D3 Engine...";
                 try {
-                    // Try proxy mapping first
-                    await loadScriptViaTag("/d3/d3.v7.min.js");
+                    // Hijacking the confirmed-working ESM proxy to load D3 natively 
+                    // as an ES Module, completely bypassing script tags and CSP.
+                    const d3Module = await import("/esm/d3");
+                    window.d3 = d3Module.default ? d3Module.default : d3Module;
                 } catch (e1) {
-                    console.warn("Proxy script failed, trying external fallbacks...", e1);
-                    try {
-                        await loadScriptViaTag("https://d3js.org/d3.v7.min.js");
-                    } catch (e2) {
-                        await loadScriptViaTag("https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js");
-                    }
+                    console.warn("ESM proxy import failed, trying external...", e1);
+                    const d3Module = await import("https://esm.sh/d3");
+                    window.d3 = d3Module.default ? d3Module.default : d3Module;
                 }
 
-                if (!window.d3) throw new Error("D3 evaluated but failed to attach to window.");
+                if (!window.d3 || !window.d3.geoOrthographic) {
+                    throw new Error("D3 evaluated but is missing required mapping methods.");
+                }
 
                 loadingScreen.innerText = "Loading Map Data...";
                 const data = await fetchMapData();
