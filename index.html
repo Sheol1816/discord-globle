@@ -128,7 +128,6 @@
     <script type="module">
         const statusText = document.getElementById('discord-status');
         const loadingScreen = document.getElementById('loading');
-        const cb = Date.now(); 
 
         async function setupDiscord() {
             let DiscordSDK;
@@ -335,42 +334,39 @@
 
         // --- BOOT SEQUENCE ---
         async function boot() {
-            await setupDiscord(); // Connects using the /esm proxy
+            await setupDiscord(); 
             
             try {
                 loadingScreen.innerText = "Loading D3 Engine (Bundled)...";
                 
                 try {
-                    // ?bundle flag forces the proxy to compile all D3 dependencies into one file, avoiding nested CSP blocks
                     const d3Module = await import("/esm/d3@7.9.0?bundle");
                     window.d3 = d3Module.default || d3Module;
                 } catch (e1) {
-                    const d3Module = await import("https://esm.sh/d3@7.9.0?bundle");
-                    window.d3 = d3Module.default || d3Module;
+                    throw new Error("D3 Engine failed to load via /esm mapping.");
                 }
 
                 if (!window.d3 || !window.d3.geoOrthographic) {
-                    throw new Error("D3 failed to attach geoOrthographic method.");
+                    throw new Error("D3 loaded but is missing map functions.");
                 }
 
                 loadingScreen.innerText = "Loading Map Data...";
                 
                 let data;
                 try {
-                    // Hijacking the exact same /esm proxy to fetch the raw map data directly from github
-                    const res = await fetch("/esm/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson?v=" + cb);
+                    // Fetch the map data through the completely new /map proxy
+                    const res = await fetch("/map/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson");
                     if (!res.ok) throw new Error(`Proxy Map HTTP ${res.status}`);
                     data = await res.json();
                 } catch (e2) {
-                    const res = await fetch("https://esm.sh/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson");
-                    data = await res.json();
+                    throw new Error("Map fetch failed. Did you add the /map URL Mapping pointing to cdn.jsdelivr.net/?");
                 }
 
                 initGame(data);
 
             } catch (err) {
                 console.error("Boot failure:", err);
-                loadingScreen.innerHTML = `Error: ${err.message || String(err)}<br><br><span style="font-size: 0.8rem; color: #fca5a5; font-weight: normal;">If you just updated the file, completely quit Discord from the system tray and reopen it.</span>`;
+                loadingScreen.innerHTML = `Error: ${err.message || String(err)}<br><br><span style="font-size: 0.8rem; color: #fca5a5; font-weight: normal;">If you just updated mappings, completely quit Discord from the system tray and reopen it.</span>`;
                 loadingScreen.style.color = "#f87171";
             }
         }
