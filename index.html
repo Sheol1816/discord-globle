@@ -342,15 +342,29 @@
                 loadingScreen.innerText = "Loading D3 Engine (jsDelivr)...";
                 
                 try {
-                    // Hijack the new /map proxy to fetch pre-compiled D3 directly from NPM registry via jsdelivr
                     const res = await fetch("/map/npm/d3@7.9.0/dist/d3.min.js?v=" + cb);
                     if (!res.ok) throw new Error(`Proxy D3 HTTP ${res.status}`);
                     
                     const code = await res.text();
                     
-                    // Inject raw script, dodging CSP entirely
+                    // Force D3 to attach to window.d3 by hiding Discord's module loaders
                     const script = document.createElement("script");
-                    script.textContent = code;
+                    script.textContent = `
+                        (function() {
+                            var _define = window.define;
+                            var _module = window.module;
+                            var _exports = window.exports;
+                            window.define = undefined;
+                            window.module = undefined;
+                            window.exports = undefined;
+                            
+                            ${code}
+                            
+                            window.define = _define;
+                            window.module = _module;
+                            window.exports = _exports;
+                        })();
+                    `;
                     document.head.appendChild(script);
                     
                 } catch (e1) {
@@ -358,14 +372,13 @@
                 }
 
                 if (!window.d3 || !window.d3.geoOrthographic) {
-                    throw new Error("D3 loaded but is missing map functions. Check your /map proxy.");
+                    throw new Error("D3 loaded but is missing map functions. Discord's module loader might still be fucking with it.");
                 }
 
                 loadingScreen.innerText = "Loading Map Data...";
                 
                 let data;
                 try {
-                    // Fetch the map data through the exact same /map proxy targeting github raw content
                     const res = await fetch("/map/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson?v=" + cb);
                     if (!res.ok) throw new Error(`Proxy Map HTTP ${res.status}`);
                     data = await res.json();
