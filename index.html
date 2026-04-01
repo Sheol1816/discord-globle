@@ -347,23 +347,22 @@
                     
                     const code = await res.text();
                     
-                    // Force D3 to attach to window.d3 by hiding Discord's module loaders
+                    // Force D3 to attach to window.d3 directly in the global scope 
+                    // without an IIFE wrapper to prevent 'strict mode' from nuking the 'this' context.
                     const script = document.createElement("script");
                     script.textContent = `
-                        (function() {
-                            var _define = window.define;
-                            var _module = window.module;
-                            var _exports = window.exports;
-                            window.define = undefined;
-                            window.module = undefined;
-                            window.exports = undefined;
-                            
-                            ${code}
-                            
-                            window.define = _define;
-                            window.module = _module;
-                            window.exports = _exports;
-                        })();
+                        var _define = window.define;
+                        var _module = window.module;
+                        var _exports = window.exports;
+                        window.define = undefined;
+                        window.module = undefined;
+                        window.exports = undefined;
+                        
+                        ${code}
+                        
+                        window.define = _define;
+                        window.module = _module;
+                        window.exports = _exports;
                     `;
                     document.head.appendChild(script);
                     
