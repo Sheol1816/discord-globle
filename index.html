@@ -128,7 +128,7 @@
     <script type="module">
         const statusText = document.getElementById('discord-status');
         const loadingScreen = document.getElementById('loading');
-        const cb = Date.now(); // Cache buster to circumvent Discord's aggressive proxy caching
+        const cb = Date.now(); 
 
         async function setupDiscord() {
             let DiscordSDK;
@@ -164,26 +164,6 @@
             }
         }
 
-        async function fetchMapData() {
-            let response;
-            try {
-                // Try Discord Proxy Mapping with cache buster
-                response = await fetch("/data/holtzy/D3-graph-gallery/master/DATA/world.geojson?v=" + cb);
-                if (!response.ok) throw new Error(`Proxy Map HTTP ${response.status}`);
-            } catch (err) {
-                console.warn("Proxy map fetch failed, trying fallback...", err);
-                try {
-                    response = await fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson");
-                    if (!response.ok) throw new Error(`Fallback Map HTTP ${response.status}`);
-                } catch (err2) {
-                    // Last resort jsdelivr fallback if GitHub raw gets blocked
-                    response = await fetch("https://cdn.jsdelivr.net/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson");
-                    if (!response.ok) throw new Error(`Final Fallback HTTP ${response.status}`);
-                }
-            }
-            return await response.json();
-        }
-
         // --- GAME VARIABLES ---
         let worldData = null;
         let targetCountry = null;
@@ -214,7 +194,6 @@
 
         // --- GAME SETUP ---
         function initGame(data) {
-            // Filter Data
             worldData = data.features.filter(d => d.id !== "ATA" && d.properties.name);
             worldData.forEach(feature => {
                 feature.properties.centroid = window.d3.geoCentroid(feature);
@@ -223,7 +202,6 @@
             targetCountry = worldData[Math.floor(Math.random() * worldData.length)];
             console.log("Pssst. The target is:", targetCountry.properties.name);
 
-            // Populate Datalist
             const datalist = document.getElementById('countries-list');
             worldData.forEach(d => {
                 const option = document.createElement('option');
@@ -231,7 +209,6 @@
                 datalist.appendChild(option);
             });
 
-            // D3 Canvas Setup
             const wrapper = document.getElementById('globe-wrapper');
             const width = wrapper.clientWidth;
             const height = wrapper.clientHeight;
@@ -256,7 +233,6 @@
                 .attr("stroke-width", 0.5)
                 .attr("id", d => `country-${d.id}`);
 
-            // Drag Interaction
             const drag = window.d3.drag().on("drag", (event) => {
                 const rotate = projection.rotate();
                 const k = 50 / projection.scale();
@@ -265,7 +241,6 @@
             });
             svg.call(drag);
 
-            // Enable Inputs
             document.getElementById('guess-input').disabled = false;
             document.getElementById('guess-btn').disabled = false;
             loadingScreen.style.display = 'none';
@@ -360,54 +335,42 @@
 
         // --- BOOT SEQUENCE ---
         async function boot() {
-            await setupDiscord();
+            await setupDiscord(); // Connects using the /esm proxy
             
             try {
-                loadingScreen.innerText = "Loading D3 Engine...";
+                loadingScreen.innerText = "Loading D3 Engine (Bundled)...";
                 
-                // Fetch raw D3 directly from the new cdnjs proxy mapping, avoiding redirects
-                const d3Paths = [
-                    "/cdnjs/ajax/libs/d3/7.8.5/d3.min.js",
-                    "/cdnjs/ajax/libs/d3/7.9.0/d3.min.js"
-                ];
-                
-                let d3Loaded = false;
-                let lastErr = "";
-
-                for (const path of d3Paths) {
-                    try {
-                        const res = await fetch(path + "?v=" + cb);
-                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                        
-                        const code = await res.text();
-                        
-                        // Execute the code by safely attaching it to the DOM
-                        const script = document.createElement("script");
-                        script.textContent = code;
-                        document.head.appendChild(script);
-                        
-                        // Verify execution worked
-                        if (window.d3) {
-                            d3Loaded = true;
-                            break;
-                        }
-                    } catch (e) {
-                        lastErr = e.message;
-                        console.warn(`Proxy D3 fetch failed for ${path}:`, e);
-                    }
+                try {
+                    // ?bundle flag forces the proxy to compile all D3 dependencies into one file, avoiding nested CSP blocks
+                    const d3Module = await import("/esm/d3@7.9.0?bundle");
+                    window.d3 = d3Module.default || d3Module;
+                } catch (e1) {
+                    const d3Module = await import("https://esm.sh/d3@7.9.0?bundle");
+                    window.d3 = d3Module.default || d3Module;
                 }
 
-                if (!d3Loaded || !window.d3 || !window.d3.geoOrthographic) {
-                    throw new Error("Discord's proxy murdered all D3 fetches. Last error: " + lastErr);
+                if (!window.d3 || !window.d3.geoOrthographic) {
+                    throw new Error("D3 failed to attach geoOrthographic method.");
                 }
 
                 loadingScreen.innerText = "Loading Map Data...";
-                const data = await fetchMapData();
+                
+                let data;
+                try {
+                    // Hijacking the exact same /esm proxy to fetch the raw map data directly from github
+                    const res = await fetch("/esm/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson?v=" + cb);
+                    if (!res.ok) throw new Error(`Proxy Map HTTP ${res.status}`);
+                    data = await res.json();
+                } catch (e2) {
+                    const res = await fetch("https://esm.sh/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson");
+                    data = await res.json();
+                }
+
                 initGame(data);
 
             } catch (err) {
                 console.error("Boot failure:", err);
-                loadingScreen.innerHTML = `Error: ${err.message}<br><br><span style="font-size: 0.8rem; color: #fca5a5; font-weight: normal;">If you just updated mappings, completely quit Discord from the system tray and reopen it.</span>`;
+                loadingScreen.innerHTML = `Error: ${err.message || String(err)}<br><br><span style="font-size: 0.8rem; color: #fca5a5; font-weight: normal;">If you just updated the file, completely quit Discord from the system tray and reopen it.</span>`;
                 loadingScreen.style.color = "#f87171";
             }
         }
