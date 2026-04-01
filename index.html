@@ -365,11 +365,10 @@
             try {
                 loadingScreen.innerText = "Loading D3 Engine...";
                 
-                // Fetch raw D3 directly from Github via the /data proxy, avoiding redirects and module blocks
+                // Fetch raw D3 directly from the new cdnjs proxy mapping, avoiding redirects
                 const d3Paths = [
-                    "/data/d3/d3/main/dist/d3.min.js",
-                    "/data/d3/d3/v7.8.5/dist/d3.min.js",
-                    "/data/d3/d3/v7.9.0/dist/d3.min.js"
+                    "/cdnjs/ajax/libs/d3/7.8.5/d3.min.js",
+                    "/cdnjs/ajax/libs/d3/7.9.0/d3.min.js"
                 ];
                 
                 let d3Loaded = false;
