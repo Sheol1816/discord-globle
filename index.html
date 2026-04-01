@@ -339,39 +339,40 @@
             await setupDiscord(); 
             
             try {
-                loadingScreen.innerText = "Loading D3 Engine (jsDelivr)...";
+                loadingScreen.innerText = "Loading D3 Engine (Native Script)...";
                 
                 try {
-                    const res = await fetch("/map/npm/d3@7.9.0/dist/d3.min.js?v=" + cb);
-                    if (!res.ok) throw new Error(`Proxy D3 HTTP ${res.status}`);
-                    
-                    const code = await res.text();
-                    
-                    // Force D3 to attach to window.d3 directly in the global scope 
-                    // without an IIFE wrapper to prevent 'strict mode' from nuking the 'this' context.
-                    const script = document.createElement("script");
-                    script.textContent = `
-                        var _define = window.define;
-                        var _module = window.module;
-                        var _exports = window.exports;
-                        window.define = undefined;
-                        window.module = undefined;
-                        window.exports = undefined;
+                    await new Promise((resolve, reject) => {
+                        // Temporarily nuke Discord's module loaders so D3 natively binds to window.d3
+                        const _define = window.define;
+                        const _module = window.module;
+                        const _exports = window.exports;
                         
-                        ${code}
+                        try { window.define = undefined; window.module = undefined; window.exports = undefined; } catch(e) {}
+
+                        // Injecting a standard script tag pointing to your /map proxy completely sidesteps the CSP and context strictness
+                        const script = document.createElement("script");
+                        script.src = "/map/npm/d3@7.9.0/dist/d3.min.js?v=" + cb;
                         
-                        window.define = _define;
-                        window.module = _module;
-                        window.exports = _exports;
-                    `;
-                    document.head.appendChild(script);
+                        script.onload = () => {
+                            try { window.define = _define; window.module = _module; window.exports = _exports; } catch(e) {}
+                            resolve();
+                        };
+                        
+                        script.onerror = () => {
+                            try { window.define = _define; window.module = _module; window.exports = _exports; } catch(e) {}
+                            reject(new Error("Script tag blocked or failed to load."));
+                        };
+                        
+                        document.head.appendChild(script);
+                    });
                     
                 } catch (e1) {
-                    throw new Error("D3 Engine failed to load via /map mapping: " + e1.message);
+                    throw new Error("D3 Engine failed to load via /map proxy script tag: " + e1.message);
                 }
 
                 if (!window.d3 || !window.d3.geoOrthographic) {
-                    throw new Error("D3 loaded but is missing map functions. Discord's module loader might still be fucking with it.");
+                    throw new Error("D3 loaded but is missing map functions. Discord's iframe is a fucking nightmare.");
                 }
 
                 loadingScreen.innerText = "Loading Map Data...";
