@@ -4,176 +4,284 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Discord Globle</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        body { background-color: #111827; color: #f3f4f6; }
-        .globe-container { cursor: grab; }
-        .globe-container:active { cursor: grabbing; }
+        /* Pure Vanilla CSS to bypass Discord's strict script CSP */
+        :root {
+            --bg-color: #111827;
+            --panel-bg: #1f2937;
+            --border-color: #374151;
+            --text-color: #f3f4f6;
+            --red: #dc2626;
+            --red-hover: #b91c1c;
+            --green: #22c55e;
+            --green-bg: rgba(20, 83, 45, 0.5);
+        }
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body {
+            background-color: var(--bg-color); color: var(--text-color);
+            margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+        }
+        header { text-align: center; margin-bottom: 20px; }
+        h1 { font-size: 2.5rem; font-weight: 900; color: var(--red); margin: 0; letter-spacing: 1px; }
+        h1 span { color: white; }
+        p.subtitle { color: #9ca3af; font-size: 0.9rem; margin-top: 5px; }
+        #discord-status { font-size: 0.8rem; color: #eab308; margin-top: 5px; }
         
-        /* Custom Scrollbar for guesses */
+        main { display: flex; flex-wrap: wrap; gap: 30px; width: 100%; max-width: 900px; justify-content: center; }
+        .column { flex: 1; min-width: 320px; display: flex; flex-direction: column; gap: 15px; }
+        
+        #globe-wrapper {
+            width: 100%; aspect-ratio: 1; background-color: #0f172a; border-radius: 50%;
+            box-shadow: 0 0 40px rgba(59,130,246,0.15); position: relative; cursor: grab; overflow: hidden;
+        }
+        #globe-wrapper:active { cursor: grabbing; }
+        #loading {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            background: rgba(17,24,39,0.8); z-index: 10; font-size: 1.2rem; font-weight: bold; text-align: center; padding: 20px;
+        }
+        
+        .panel { background: var(--panel-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
+        .form-row { display: flex; gap: 10px; }
+        input { flex: 1; padding: 10px 15px; background: #111827; border: 1px solid var(--border-color); color: white; border-radius: 6px; outline: none; }
+        input:focus { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+        button { padding: 10px 20px; background: var(--red); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover:not(:disabled) { background: var(--red-hover); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #error-msg { color: #f87171; font-size: 0.85rem; margin-top: 10px; display: none; }
+        
+        .guesses-box { display: flex; flex-direction: column; height: 350px; }
+        .guesses-header { display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); font-weight: bold; }
+        #guess-counter { background: var(--border-color); padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; }
+        .guesses-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 10px 0 0 0; padding: 0; list-style: none; padding-right: 5px; }
+        .guess-item { display: flex; justify-content: space-between; align-items: center; background: rgba(55,65,81,0.5); padding: 12px; border-radius: 6px; font-weight: bold; font-size: 0.95rem; }
+        .guess-item.correct { background: var(--green-bg); border: 1px solid rgba(34,197,94,0.5); color: #4ade80; }
+        .color-box { width: 16px; height: 16px; border-radius: 4px; display: inline-block; vertical-align: middle; margin-right: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+        
+        #win-message { background: var(--green-bg); border: 1px solid var(--green); padding: 20px; border-radius: 12px; text-align: center; display: none; margin-bottom: 15px; }
+        #win-message h2 { color: #4ade80; margin-top: 0; font-size: 1.8rem; }
+        #win-message button { background: var(--green); margin-top: 15px; }
+        #win-message button:hover { background: #16a34a; }
+        
         ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1f2937; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: var(--panel-bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
     </style>
 </head>
-<body class="flex flex-col items-center min-h-screen font-sans overflow-x-hidden p-4">
+<body>
 
     <!-- Header -->
-    <header class="text-center my-4">
-        <h1 class="text-4xl font-extrabold tracking-tight text-red-500">GLOBLE <span class="text-white">CLONE</span></h1>
-        <p class="text-gray-400 mt-2 text-sm">Find the mystery country. The redder it is, the closer you are.</p>
-        <p id="discord-status" class="text-xs text-yellow-500 mt-2">Connecting to Discord...</p>
+    <header>
+        <h1>GLOBLE <span>CLONE</span></h1>
+        <p class="subtitle">Find the mystery country. The redder it is, the closer you are.</p>
+        <p id="discord-status">Booting up...</p>
     </header>
 
     <!-- Main Game Area -->
-    <main class="w-full max-w-4xl flex flex-col md:flex-row gap-8 items-center md:items-start justify-center mt-4">
-        
+    <main>
         <!-- Globe Section -->
-        <div class="flex-1 flex flex-col items-center w-full max-w-md relative">
-            <div id="loading" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-80 z-10 text-xl font-bold text-gray-300">
-                Loading world data...
-            </div>
-            
-            <div id="globe-wrapper" class="globe-container w-full aspect-square relative rounded-full shadow-[0_0_40px_rgba(59,130,246,0.15)] bg-[#0f172a]">
-                <svg id="globe-svg" class="w-full h-full"></svg>
+        <div class="column relative">
+            <div id="loading">Loading dependencies...</div>
+            <div id="globe-wrapper">
+                <svg id="globe-svg" style="width: 100%; height: 100%; display: block;"></svg>
             </div>
         </div>
 
         <!-- Controls & Guesses Section -->
-        <div class="flex-1 w-full max-w-md flex flex-col gap-4">
+        <div class="column">
             
-            <div id="win-message" class="hidden bg-green-900/50 border border-green-500 text-green-200 p-4 rounded-lg shadow-lg text-center animate-pulse">
-                <h2 class="text-2xl font-bold mb-1">Fuck Yeah!</h2>
-                <p>You found <span id="target-name-display" class="font-extrabold text-white"></span> in <span id="guess-count-display"></span> guesses.</p>
-                <button onclick="location.reload()" class="mt-3 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold transition">Play Again</button>
+            <div id="win-message">
+                <h2>Fuck Yeah!</h2>
+                <p>You found <span id="target-name-display" style="font-weight: 900; color: white;"></span> in <span id="guess-count-display"></span> guesses.</p>
+                <button onclick="location.reload()">Play Again</button>
             </div>
 
-            <div class="bg-gray-800 p-4 rounded-xl shadow-xl border border-gray-700">
-                <form id="guess-form" class="flex gap-2">
+            <div class="panel">
+                <form id="guess-form" class="form-row">
                     <input 
                         type="text" 
                         id="guess-input" 
                         list="countries-list" 
                         placeholder="Type a country name..." 
-                        class="flex-1 bg-gray-900 border border-gray-600 rounded px-4 py-2 text-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition disabled:opacity-50"
                         autocomplete="off"
+                        disabled
                     >
                     <datalist id="countries-list"></datalist>
-                    <button type="submit" id="guess-btn" class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
-                        Guess
-                    </button>
+                    <button type="submit" id="guess-btn" disabled>Guess</button>
                 </form>
-                <p id="error-msg" class="text-red-400 text-sm mt-2 hidden">That country doesn't exist or you already guessed it, try again.</p>
+                <p id="error-msg">That country doesn't exist or you already guessed it.</p>
             </div>
 
-            <!-- Guesses List -->
-            <div class="bg-gray-800 rounded-xl shadow-xl border border-gray-700 flex-1 flex flex-col h-64 md:h-96">
-                <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/80 rounded-t-xl">
-                    <h3 class="font-bold text-gray-300">Your Guesses</h3>
-                    <span id="guess-counter" class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full">0</span>
+            <div class="panel guesses-box">
+                <div class="guesses-header">
+                    <span>Your Guesses</span>
+                    <span id="guess-counter">0</span>
                 </div>
-                <div class="p-2 flex-1 overflow-y-auto">
-                    <ul id="guesses-ul" class="flex flex-col gap-2">
-                        <!-- Guesses will be injected here -->
-                    </ul>
-                </div>
+                <ul id="guesses-list" class="guesses-list">
+                    <!-- Guesses injected here -->
+                </ul>
             </div>
 
         </div>
     </main>
 
     <script type="module">
-        import { DiscordSDK } from "https://esm.sh/@discord/embedded-app-sdk";
+        const statusText = document.getElementById('discord-status');
+        const loadingScreen = document.getElementById('loading');
 
-        // Initialize Discord SDK to complete the iframe handshake
-        const clientId = "1488705762820751420"; // Snagged from your screenshot
-        const discordSdk = new DiscordSDK(clientId);
+        // --- DYNAMIC LOADER WITH PROXY FALLBACKS ---
+        async function loadScript(url) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error(`Failed to load ${url}`));
+                document.head.appendChild(script);
+            });
+        }
 
         async function setupDiscord() {
-            const statusText = document.getElementById('discord-status');
+            let DiscordSDK;
             try {
-                // 10 second timeout for Discord Handshake so it doesn't hang forever
-                await Promise.race([
-                    discordSdk.ready(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error("Discord timeout")), 10000))
-                ]);
-                console.log("Discord handshake complete!");
-                statusText.innerText = "Discord Connected 🚀";
-                statusText.className = "text-xs text-green-400 mt-2";
+                // Try Discord Proxy Mapped URL first
+                const module = await import("/esm/@discord/embedded-app-sdk");
+                DiscordSDK = module.DiscordSDK;
             } catch (e) {
-                console.log("Running in regular browser or handshake failed.");
+                try {
+                    // Fallback to absolute URL for standard browser testing
+                    const module = await import("https://esm.sh/@discord/embedded-app-sdk");
+                    DiscordSDK = module.DiscordSDK;
+                } catch (fallbackError) {
+                    console.warn("Discord SDK could not be loaded.");
+                }
+            }
+
+            if (DiscordSDK) {
+                const clientId = "1488705762820751420"; 
+                const discordSdk = new DiscordSDK(clientId);
+                try {
+                    await Promise.race([
+                        discordSdk.ready(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 8000))
+                    ]);
+                    statusText.innerText = "Discord Connected 🚀";
+                    statusText.style.color = "#4ade80";
+                } catch (e) {
+                    statusText.innerText = "Running outside Discord (Browser Mode)";
+                    statusText.style.color = "#60a5fa";
+                }
+            } else {
                 statusText.innerText = "Running outside Discord (Browser Mode)";
-                statusText.className = "text-xs text-blue-400 mt-2";
+                statusText.style.color = "#60a5fa";
             }
         }
 
-        // --- GAME STATE ---
+        async function fetchMapData() {
+            let response;
+            try {
+                // Try Discord Proxy Mapping
+                response = await fetch("/data/holtzy/D3-graph-gallery/master/DATA/world.geojson");
+                if (!response.ok) throw new Error("Proxy fetch failed");
+            } catch {
+                // Fallback to absolute URL
+                response = await fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson");
+            }
+            return await response.json();
+        }
+
+        // --- GAME VARIABLES ---
         let worldData = null;
         let targetCountry = null;
-        let guesses = []; // Array of objects: { feature, distance }
-        const MAX_DISTANCE = 15000; // km for color scaling
+        let guesses = []; 
+        const MAX_DISTANCE = 15000;
         let isGameOver = false;
+        let projection, path, svg, waterLayer, graticuleLayer, landLayer;
 
-        // --- D3 SETUP ---
-        const svgElement = document.getElementById('globe-svg');
-        const wrapper = document.getElementById('globe-wrapper');
-        const width = wrapper.clientWidth;
-        const height = wrapper.clientHeight;
+        // --- MATH ---
+        function getDistance(coord1, coord2) {
+            const R = 6371; 
+            const dLat = (coord2[1] - coord1[1]) * Math.PI / 180;
+            const dLon = (coord2[0] - coord1[0]) * Math.PI / 180;
+            const lat1 = coord1[1] * Math.PI / 180;
+            const lat2 = coord2[1] * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            return R * c;
+        }
 
-        const svg = d3.select("#globe-svg")
-            .attr("width", width)
-            .attr("height", height);
+        function getColorForDistance(distance) {
+            if (distance === 0) return '#22c55e';
+            const ratio = Math.min(distance, MAX_DISTANCE) / MAX_DISTANCE;
+            const lightness = 35 + (ratio * 55);
+            return `hsl(0, 100%, ${lightness}%)`;
+        }
 
-        // Orthographic projection creates the 3D globe effect
-        const projection = d3.geoOrthographic()
-            .scale((width / 2) - 10)
-            .translate([width / 2, height / 2])
-            .clipAngle(90)
-            .precision(0.1);
+        // --- GAME SETUP ---
+        function initGame(data) {
+            // Filter Data
+            worldData = data.features.filter(d => d.id !== "ATA" && d.properties.name);
+            worldData.forEach(feature => {
+                feature.properties.centroid = window.d3.geoCentroid(feature);
+            });
 
-        const path = d3.geoPath().projection(projection);
+            targetCountry = worldData[Math.floor(Math.random() * worldData.length)];
+            console.log("Pssst. The target is:", targetCountry.properties.name);
 
-        // Layers
-        const waterLayer = svg.append("g");
-        const graticuleLayer = svg.append("g");
-        const landLayer = svg.append("g");
+            // Populate Datalist
+            const datalist = document.getElementById('countries-list');
+            worldData.forEach(d => {
+                const option = document.createElement('option');
+                option.value = d.properties.name;
+                datalist.appendChild(option);
+            });
 
-        // Add Water (base sphere)
-        waterLayer.append("path")
-            .datum({ type: "Sphere" })
-            .attr("class", "water")
-            .attr("d", path)
-            .attr("fill", "#0f172a") // Deep blue/slate
-            .attr("stroke", "#1e293b")
-            .attr("stroke-width", 2);
+            // D3 Canvas Setup
+            const wrapper = document.getElementById('globe-wrapper');
+            const width = wrapper.clientWidth;
+            const height = wrapper.clientHeight;
 
-        // Add Graticule (grid lines)
-        const graticule = d3.geoGraticule();
-        graticuleLayer.append("path")
-            .datum(graticule)
-            .attr("class", "graticule")
-            .attr("d", path)
-            .attr("fill", "none")
-            .attr("stroke", "#1e293b")
-            .attr("stroke-width", 0.5)
-            .attr("stroke-opacity", 0.5);
+            svg = window.d3.select("#globe-svg");
+            projection = window.d3.geoOrthographic().scale((width / 2) - 10).translate([width / 2, height / 2]).clipAngle(90).precision(0.1);
+            path = window.d3.geoPath().projection(projection);
 
-        // --- DRAG INTERACTION ---
-        const drag = d3.drag()
-            .on("drag", (event) => {
+            waterLayer = svg.append("g");
+            graticuleLayer = svg.append("g");
+            landLayer = svg.append("g");
+
+            waterLayer.append("path").datum({ type: "Sphere" }).attr("d", path).attr("fill", "#0f172a").attr("stroke", "#1e293b").attr("stroke-width", 2);
+            graticuleLayer.append("path").datum(window.d3.geoGraticule()).attr("d", path).attr("fill", "none").attr("stroke", "#1e293b").attr("stroke-width", 0.5).attr("stroke-opacity", 0.5);
+
+            landLayer.selectAll("path")
+                .data(worldData).enter().append("path")
+                .attr("class", "country")
+                .attr("d", path)
+                .attr("fill", "#374151")
+                .attr("stroke", "#1f2937")
+                .attr("stroke-width", 0.5)
+                .attr("id", d => `country-${d.id}`);
+
+            // Drag Interaction
+            const drag = window.d3.drag().on("drag", (event) => {
                 const rotate = projection.rotate();
-                // Adjust rotation sensitivity
                 const k = 50 / projection.scale();
-                projection.rotate([
-                    rotate[0] + event.dx * k,
-                    rotate[1] - event.dy * k
-                ]);
+                projection.rotate([rotate[0] + event.dx * k, rotate[1] - event.dy * k]);
                 updatePaths();
             });
-        
-        svg.call(drag);
+            svg.call(drag);
+
+            // Enable Inputs
+            document.getElementById('guess-input').disabled = false;
+            document.getElementById('guess-btn').disabled = false;
+            loadingScreen.style.display = 'none';
+
+            window.addEventListener('resize', () => {
+                const newWidth = wrapper.clientWidth;
+                const newHeight = wrapper.clientHeight;
+                projection.scale((newWidth / 2) - 10).translate([newWidth / 2, newHeight / 2]);
+                updatePaths();
+            });
+        }
 
         function updatePaths() {
             landLayer.selectAll("path").attr("d", path);
@@ -181,81 +289,7 @@
             waterLayer.selectAll("path").attr("d", path);
         }
 
-        // --- MATH / DISTANCE CALCULATION ---
-        // Haversine formula to calculate distance between two [lon, lat] coordinates in km
-        function getDistance(coord1, coord2) {
-            const R = 6371; // Earth radius in km
-            const dLat = (coord2[1] - coord1[1]) * Math.PI / 180;
-            const dLon = (coord2[0] - coord1[0]) * Math.PI / 180;
-            const lat1 = coord1[1] * Math.PI / 180;
-            const lat2 = coord2[1] * Math.PI / 180;
-
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2); 
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-            return R * c;
-        }
-
-        // Determine color based on distance
-        function getColorForDistance(distance) {
-            if (distance === 0) return '#22c55e'; // Exact match (Green)
-            
-            // Map distance to HSL lightness (closer = darker red, further = lighter pink/white)
-            const ratio = Math.min(distance, MAX_DISTANCE) / MAX_DISTANCE;
-            // Lightness goes from 35% (close) to 90% (far)
-            const lightness = 35 + (ratio * 55);
-            return `hsl(0, 100%, ${lightness}%)`;
-        }
-
-        // --- INIT DATA ---
-        async function init() {
-            try {
-                // Fetch low-res world GeoJSON
-                const response = await fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson");
-                const data = await response.json();
-                
-                // Filter out Antarctica and missing names
-                worldData = data.features.filter(d => d.id !== "ATA" && d.properties.name);
-                
-                // Pre-calculate centroids for all countries
-                worldData.forEach(feature => {
-                    feature.properties.centroid = d3.geoCentroid(feature);
-                });
-
-                // Pick random target
-                targetCountry = worldData[Math.floor(Math.random() * worldData.length)];
-                
-                // Debug cheat:
-                console.log("Pssst. The target is:", targetCountry.properties.name);
-
-                // Populate Datalist
-                const datalist = document.getElementById('countries-list');
-                worldData.forEach(d => {
-                    const option = document.createElement('option');
-                    option.value = d.properties.name;
-                    datalist.appendChild(option);
-                });
-
-                // Render Map initially (all default color)
-                landLayer.selectAll("path")
-                    .data(worldData)
-                    .enter()
-                    .append("path")
-                    .attr("class", "country")
-                    .attr("d", path)
-                    .attr("fill", "#374151") // Default gray
-                    .attr("stroke", "#1f2937")
-                    .attr("stroke-width", 0.5)
-                    .attr("id", d => `country-${d.id}`);
-
-                document.getElementById('loading').style.display = 'none';
-            } catch (err) {
-                console.error("Shit, failed to load map data:", err);
-                document.getElementById('loading').innerText = "Failed to load map data. Check console.";
-            }
-        }
-
-        // --- GAME LOGIC ---
+        // --- UI UPDATES ---
         document.getElementById('guess-form').addEventListener('submit', (e) => {
             e.preventDefault();
             if (isGameOver) return;
@@ -263,123 +297,98 @@
             const inputElement = document.getElementById('guess-input');
             const errorElement = document.getElementById('error-msg');
             const guessName = inputElement.value.trim().toLowerCase();
-            
-            errorElement.classList.add('hidden');
+            errorElement.style.display = 'none';
 
             if (!guessName) return;
 
-            // Find feature by name
             const feature = worldData.find(d => d.properties.name.toLowerCase() === guessName);
             
-            // Validate
             if (!feature) {
                 errorElement.innerText = "That country doesn't exist in our data.";
-                errorElement.classList.remove('hidden');
+                errorElement.style.display = 'block';
                 return;
             }
-
             if (guesses.some(g => g.feature.id === feature.id)) {
                 errorElement.innerText = "You already guessed that, genius.";
-                errorElement.classList.remove('hidden');
+                errorElement.style.display = 'block';
                 return;
             }
 
-            // Calculate Distance
             const distance = getDistance(feature.properties.centroid, targetCountry.properties.centroid);
-            
-            // Add to guesses and sort
             guesses.push({ feature, distance });
-            guesses.sort((a, b) => a.distance - b.distance); // Closest first
-
-            updateUI(feature, distance);
-
+            guesses.sort((a, b) => a.distance - b.distance); 
+            updateUI(feature);
             inputElement.value = '';
             
-            // Check win condition
             if (feature.id === targetCountry.id) {
-                handleWin();
+                isGameOver = true;
+                inputElement.disabled = true;
+                document.getElementById('guess-btn').disabled = true;
+                document.getElementById('target-name-display').innerText = targetCountry.properties.name;
+                document.getElementById('guess-count-display').innerText = guesses.length;
+                document.getElementById('win-message').style.display = 'block';
             }
         });
 
-        function updateUI(latestFeature, latestDistance) {
-            // 1. Update Map Colors
+        function updateUI(latestFeature) {
             landLayer.selectAll(".country")
                 .attr("fill", d => {
-                    const guessRecord = guesses.find(g => g.feature.id === d.id);
-                    if (guessRecord) {
-                        return getColorForDistance(guessRecord.distance);
-                    }
-                    return "#374151"; // Default
+                    const rec = guesses.find(g => g.feature.id === d.id);
+                    return rec ? getColorForDistance(rec.distance) : "#374151";
                 })
-                .attr("stroke", d => {
-                    const guessRecord = guesses.find(g => g.feature.id === d.id);
-                    return guessRecord ? "#111827" : "#1f2937";
-                });
+                .attr("stroke", d => guesses.find(g => g.feature.id === d.id) ? "#111827" : "#1f2937");
 
-            // 2. Rotate globe to the latest guess smoothly
-            d3.transition()
-                .duration(1000)
-                .tween("rotate", () => {
-                    const targetRotation = [-latestFeature.properties.centroid[0], -latestFeature.properties.centroid[1]];
-                    const r = d3.interpolate(projection.rotate(), targetRotation);
-                    return function(t) {
-                        projection.rotate(r(t));
-                        updatePaths();
-                    };
-                });
+            window.d3.transition().duration(1000).tween("rotate", () => {
+                const targetRotation = [-latestFeature.properties.centroid[0], -latestFeature.properties.centroid[1]];
+                const r = window.d3.interpolate(projection.rotate(), targetRotation);
+                return function(t) { projection.rotate(r(t)); updatePaths(); };
+            });
 
-            // 3. Update Guesses List
-            const ul = document.getElementById('guesses-ul');
+            const ul = document.getElementById('guesses-list');
             ul.innerHTML = '';
-            
             guesses.forEach(g => {
                 const li = document.createElement('li');
                 const color = getColorForDistance(g.distance);
                 const isCorrect = g.distance === 0;
-                
-                li.className = `flex justify-between items-center p-3 rounded font-semibold ${isCorrect ? 'bg-green-900/40 text-green-400 border border-green-700' : 'bg-gray-700/50 text-gray-200'}`;
-                
+                li.className = `guess-item ${isCorrect ? 'correct' : ''}`;
                 li.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <div class="w-4 h-4 rounded-sm shadow-sm" style="background-color: ${color}"></div>
+                    <div style="display: flex; align-items: center;">
+                        <span class="color-box" style="background-color: ${color}"></span>
                         <span>${g.feature.properties.name}</span>
                     </div>
                     <span>${isCorrect ? 'Target!' : Math.round(g.distance).toLocaleString() + ' km'}</span>
                 `;
                 ul.appendChild(li);
             });
-
             document.getElementById('guess-counter').innerText = guesses.length;
         }
 
-        function handleWin() {
-            isGameOver = true;
-            document.getElementById('guess-input').disabled = true;
-            document.getElementById('guess-btn').disabled = true;
-            
-            document.getElementById('target-name-display').innerText = targetCountry.properties.name;
-            document.getElementById('guess-count-display').innerText = guesses.length;
-            document.getElementById('win-message').classList.remove('hidden');
-        }
-
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            const newWidth = wrapper.clientWidth;
-            const newHeight = wrapper.clientHeight;
-            svg.attr("width", newWidth).attr("height", newHeight);
-            projection
-                .scale((newWidth / 2) - 10)
-                .translate([newWidth / 2, newHeight / 2]);
-            updatePaths();
-        });
-
-        // Start
+        // --- BOOT SEQUENCE ---
         async function boot() {
             await setupDiscord();
-            await init();
-        }
-        boot();
+            
+            try {
+                loadingScreen.innerText = "Loading D3 Engine...";
+                try {
+                    await loadScript("/d3/d3.v7.min.js");
+                } catch {
+                    await loadScript("https://d3js.org/d3.v7.min.js");
+                }
 
+                if (!window.d3) throw new Error("D3 failed to load");
+
+                loadingScreen.innerText = "Loading Map Data...";
+                const data = await fetchMapData();
+                initGame(data);
+
+            } catch (err) {
+                console.error("Boot failure:", err);
+                loadingScreen.innerHTML = "Error loading game assets.<br>Ensure URL Mappings are set in Developer Portal.";
+                loadingScreen.style.color = "#f87171";
+            }
+        }
+
+        boot();
     </script>
 </body>
 </html>
