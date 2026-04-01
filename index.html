@@ -364,19 +364,42 @@
             
             try {
                 loadingScreen.innerText = "Loading D3 Engine...";
-                try {
-                    // Hijacking the confirmed-working ESM proxy to load D3 natively 
-                    // as an ES Module, completely bypassing script tags and CSP.
-                    const d3Module = await import("/esm/d3");
-                    window.d3 = d3Module.default ? d3Module.default : d3Module;
-                } catch (e1) {
-                    console.warn("ESM proxy import failed, trying external...", e1);
-                    const d3Module = await import("https://esm.sh/d3");
-                    window.d3 = d3Module.default ? d3Module.default : d3Module;
+                
+                // Fetch raw D3 directly from Github via the /data proxy, avoiding redirects and module blocks
+                const d3Paths = [
+                    "/data/d3/d3/main/dist/d3.min.js",
+                    "/data/d3/d3/v7.8.5/dist/d3.min.js",
+                    "/data/d3/d3/v7.9.0/dist/d3.min.js"
+                ];
+                
+                let d3Loaded = false;
+                let lastErr = "";
+
+                for (const path of d3Paths) {
+                    try {
+                        const res = await fetch(path + "?v=" + cb);
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        
+                        const code = await res.text();
+                        
+                        // Execute the code by safely attaching it to the DOM
+                        const script = document.createElement("script");
+                        script.textContent = code;
+                        document.head.appendChild(script);
+                        
+                        // Verify execution worked
+                        if (window.d3) {
+                            d3Loaded = true;
+                            break;
+                        }
+                    } catch (e) {
+                        lastErr = e.message;
+                        console.warn(`Proxy D3 fetch failed for ${path}:`, e);
+                    }
                 }
 
-                if (!window.d3 || !window.d3.geoOrthographic) {
-                    throw new Error("D3 evaluated but is missing required mapping methods.");
+                if (!d3Loaded || !window.d3 || !window.d3.geoOrthographic) {
+                    throw new Error("Discord's proxy murdered all D3 fetches. Last error: " + lastErr);
                 }
 
                 loadingScreen.innerText = "Loading Map Data...";
@@ -385,7 +408,7 @@
 
             } catch (err) {
                 console.error("Boot failure:", err);
-                loadingScreen.innerHTML = `Error: ${err.message}<br><br><span style="font-size: 0.8rem; color: #fca5a5; font-weight: normal;">If you just updated mappings, completely quit Discord from the system tray and reopen it. Discord caches mappings aggressively.</span>`;
+                loadingScreen.innerHTML = `Error: ${err.message}<br><br><span style="font-size: 0.8rem; color: #fca5a5; font-weight: normal;">If you just updated mappings, completely quit Discord from the system tray and reopen it.</span>`;
                 loadingScreen.style.color = "#f87171";
             }
         }
