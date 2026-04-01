@@ -130,23 +130,18 @@
         const loadingScreen = document.getElementById('loading');
         const cb = Date.now(); // Cache buster to circumvent Discord's aggressive proxy caching
 
-        // --- INLINE SCRIPT FETCHING (GOD TIER CSP BYPASS) ---
-        // Instead of <script src="..."> which Discord's strict CSP blocks, we fetch the 
-        // raw code text and inject it inline since 'unsafe-inline' is permitted.
-        async function fetchScriptInline(proxyUrl, fallbackUrl) {
-            let response;
-            try {
-                response = await fetch(proxyUrl + "?v=" + cb);
-                if (!response.ok) throw new Error(`HTTP ${response.status} from proxy`);
-            } catch (err) {
-                console.warn("Proxy fetch failed, falling back...", err);
-                response = await fetch(fallbackUrl);
-                if (!response.ok) throw new Error(`HTTP ${response.status} from fallback`);
-            }
-            const code = await response.text();
-            const script = document.createElement('script');
-            script.textContent = code;
-            document.head.appendChild(script);
+        // --- SCRIPT TAG INJECTION ---
+        // fetch() requires CORS headers which d3js.org doesn't always send.
+        // A standard <script> tag bypasses CORS completely, and routing it through the proxy
+        // bypasses Discord's strict CSP because it appears as a same-origin request.
+        async function loadScriptViaTag(url) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error(`Script tag failed for ${url}`));
+                document.head.appendChild(script);
+            });
         }
 
         async function setupDiscord() {
@@ -191,8 +186,14 @@
                 if (!response.ok) throw new Error(`Proxy Map HTTP ${response.status}`);
             } catch (err) {
                 console.warn("Proxy map fetch failed, trying fallback...", err);
-                response = await fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson");
-                if (!response.ok) throw new Error(`Fallback Map HTTP ${response.status}`);
+                try {
+                    response = await fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson");
+                    if (!response.ok) throw new Error(`Fallback Map HTTP ${response.status}`);
+                } catch (err2) {
+                    // Last resort jsdelivr fallback if GitHub raw gets blocked
+                    response = await fetch("https://cdn.jsdelivr.net/gh/holtzy/D3-graph-gallery@master/DATA/world.geojson");
+                    if (!response.ok) throw new Error(`Final Fallback HTTP ${response.status}`);
+                }
             }
             return await response.json();
         }
@@ -378,9 +379,15 @@
             try {
                 loadingScreen.innerText = "Loading D3 Engine...";
                 try {
-                    await fetchScriptInline("/d3/d3.v7.min.js", "https://d3js.org/d3.v7.min.js");
-                } catch (e) {
-                    throw new Error("Failed fetching D3: " + e.message);
+                    // Try proxy mapping first
+                    await loadScriptViaTag("/d3/d3.v7.min.js");
+                } catch (e1) {
+                    console.warn("Proxy script failed, trying external fallbacks...", e1);
+                    try {
+                        await loadScriptViaTag("https://d3js.org/d3.v7.min.js");
+                    } catch (e2) {
+                        await loadScriptViaTag("https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js");
+                    }
                 }
 
                 if (!window.d3) throw new Error("D3 evaluated but failed to attach to window.");
@@ -391,7 +398,6 @@
 
             } catch (err) {
                 console.error("Boot failure:", err);
-                // I explicitly output the err.message here so if it fails again, you can tell me the exact HTTP code or reason.
                 loadingScreen.innerHTML = `Error: ${err.message}<br><br><span style="font-size: 0.8rem; color: #fca5a5; font-weight: normal;">If you just updated mappings, completely quit Discord from the system tray and reopen it. Discord caches mappings aggressively.</span>`;
                 loadingScreen.style.color = "#f87171";
             }
